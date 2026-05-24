@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useId } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin, ChevronDown, ChevronUp } from "lucide-react";
@@ -22,7 +22,7 @@ export function ProductRow({ product, index }: Props) {
 
   const statusTag = () => {
     if (totalAvailable === 0) return <span className="tag tag-red">Out of stock</span>;
-    if (totalAvailable <= 5) return <span className="tag tag-amber">Low stock</span>;
+    if (totalAvailable <= 5) return <span className="tag tag-amber">Only {totalAvailable} left</span>;
     return <span className="tag tag-green">In stock</span>;
   };
 
@@ -60,8 +60,8 @@ export function ProductRow({ product, index }: Props) {
 
   return (
     <div
-      className="product-row fade-up"
-      style={{ animationDelay: `${index * 60}ms` }}
+      className="product-row fade-up border-b border-[#E4E4E7] last:border-b-0"
+      style={{ animationDelay: `${index * 50}ms` }}
     >
       {/* Main row */}
       <div
@@ -69,31 +69,42 @@ export function ProductRow({ product, index }: Props) {
         style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr auto" }}
         onClick={() => setExpanded((p) => !p)}
       >
-        {/* Name + SKU */}
+        {/* Name + description */}
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#0A0A0A] truncate">{product.name}</p>
-          <p className="text-xs text-[#71717A] mt-0.5 truncate">{product.description}</p>
+          <p className="text-sm text-[#0A0A0A] truncate" style={{ fontWeight: 600 }}>{product.name}</p>
+          <p className="text-xs text-[#A1A1AA] mt-0.5 truncate" style={{ fontWeight: 350 }}>{product.description}</p>
         </div>
 
         {/* SKU */}
         <div className="hidden md:block">
-          <span className="tag tag-slate num">{product.sku}</span>
+          <span
+            className="tag tag-slate text-[10px]"
+            style={{ fontFamily: "var(--font-geist-mono)", letterSpacing: "0.04em" }}
+          >
+            {product.sku}
+          </span>
         </div>
 
         {/* Price */}
         <div>
-          <p className="text-sm font-semibold text-[#0A0A0A] num">
+          <p
+            className="text-sm text-[#0A0A0A]"
+            style={{ fontFamily: "var(--font-geist-mono)", fontWeight: 600 }}
+          >
             &#8377;{Number(product.price).toLocaleString("en-IN")}
           </p>
         </div>
 
-        {/* Stock summary */}
+        {/* Stock */}
         <div className="hidden sm:block">
-          <p className="text-sm num text-[#0A0A0A]">
+          <p
+            className="text-xs text-[#0A0A0A]"
+            style={{ fontFamily: "var(--font-geist-mono)", fontWeight: 500 }}
+          >
             {totalAvailable}
-            <span className="text-[#71717A] text-xs"> / {totalUnits} avail</span>
+            <span className="text-[#A1A1AA]" style={{ fontWeight: 400 }}> / {totalUnits}</span>
           </p>
-          <div className="stock-bar mt-1.5 w-20">
+          <div className="stock-bar mt-1.5 w-16">
             <div
               className="stock-bar-fill"
               style={{
@@ -104,90 +115,94 @@ export function ProductRow({ product, index }: Props) {
           </div>
         </div>
 
-        {/* Status + expand */}
+        {/* Status + toggle */}
         <div className="flex items-center gap-3">
           {statusTag()}
-          <span className="text-[#71717A]">
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          <span className="text-[#A1A1AA]">
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </span>
         </div>
       </div>
 
       {/* Expanded warehouse rows */}
       {expanded && (
-        <div className="px-6 pb-4 bg-[#FAFAFA] border-t border-[#F0F0F0]">
-          <p className="text-[11px] font-semibold text-[#71717A] uppercase tracking-widest pt-4 pb-2">
+        <div className="px-6 pb-5 border-t border-[#F4F4F5] bg-[#FAFAFA]">
+          <p
+            className="text-[10px] uppercase tracking-[0.14em] text-[#A1A1AA] pt-4 pb-3"
+            style={{ fontWeight: 600 }}
+          >
             Warehouse availability
           </p>
-          {product.stockItems.map((item) => {
-            const pct = item.total > 0 ? (item.available / item.total) * 100 : 0;
-            const avail = item.available > 0;
-            return (
-              <div key={item.id} className="warehouse-slot">
-                {/* Location */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <MapPin className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-[#0A0A0A] truncate">{item.warehouse.name}</p>
-                    <p className="text-xs text-[#71717A]">{item.warehouse.location}</p>
+          <div className="divide-y divide-[#F4F4F5]">
+            {product.stockItems.map((item) => {
+              const pct = item.total > 0 ? (item.available / item.total) * 100 : 0;
+              const avail = item.available > 0;
+              return (
+                <div key={item.id} className="warehouse-slot py-3">
+                  {/* Location */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-[#A1A1AA] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-[#0A0A0A] truncate" style={{ fontWeight: 500 }}>{item.warehouse.name}</p>
+                      <p className="text-xs text-[#A1A1AA]" style={{ fontWeight: 350 }}>{item.warehouse.location}</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Stock count + bar */}
-                <div className="text-right min-w-[80px]">
-                  <p className={`text-xs font-semibold num ${avail ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                    {item.available} of {item.total} units
-                  </p>
-                  <div className="stock-bar mt-1 ml-auto w-16">
-                    <div
-                      className="stock-bar-fill"
+                  {/* Count + bar */}
+                  <div className="text-right">
+                    <p
+                      className="text-xs"
                       style={{
-                        width: `${pct}%`,
-                        background: pct > 50 ? "#059669" : pct > 15 ? "#D97706" : "#DC2626",
+                        fontFamily: "var(--font-geist-mono)",
+                        fontWeight: 600,
+                        color: avail ? "#059669" : "#DC2626",
                       }}
-                    />
-                  </div>
-                </div>
-
-                {/* Reserve button */}
-                <button
-                  disabled={!avail || loading === item.warehouse.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    reserve(item.warehouse.id, item.warehouse.name);
-                  }}
-                  className="h-8 px-4 text-xs font-semibold rounded border transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                  style={
-                    avail
-                      ? {
-                          background: "#0A0A0A",
-                          color: "#FFFFFF",
-                          borderColor: "#0A0A0A",
-                        }
-                      : {
-                          background: "transparent",
-                          color: "#71717A",
-                          borderColor: "#E4E4E7",
-                        }
-                  }
-                >
-                  {loading === item.warehouse.id ? (
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className="inline-block w-3 h-3 border-2 rounded-full animate-spin"
-                        style={{ borderColor: "rgba(255,255,255,0.3)", borderTopColor: "#fff" }}
+                    >
+                      {item.available} / {item.total}
+                    </p>
+                    <div className="stock-bar mt-1 ml-auto w-14">
+                      <div
+                        className="stock-bar-fill"
+                        style={{
+                          width: `${pct}%`,
+                          background: pct > 50 ? "#059669" : pct > 15 ? "#D97706" : "#DC2626",
+                        }}
                       />
-                      Holding...
-                    </span>
-                  ) : avail ? (
-                    "Reserve"
-                  ) : (
-                    "Unavailable"
-                  )}
-                </button>
-              </div>
-            );
-          })}
+                    </div>
+                  </div>
+
+                  {/* Reserve button */}
+                  <button
+                    disabled={!avail || loading === item.warehouse.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      reserve(item.warehouse.id, item.warehouse.name);
+                    }}
+                    className="h-8 px-5 text-xs rounded transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 border"
+                    style={
+                      avail
+                        ? { background: "#0A0A0A", color: "#FFFFFF", borderColor: "#0A0A0A", fontWeight: 600 }
+                        : { background: "transparent", color: "#A1A1AA", borderColor: "#E4E4E7", fontWeight: 500 }
+                    }
+                  >
+                    {loading === item.warehouse.id ? (
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="inline-block w-3 h-3 border-2 rounded-full animate-spin"
+                          style={{ borderColor: "rgba(255,255,255,0.25)", borderTopColor: "#fff" }}
+                        />
+                        Holding...
+                      </span>
+                    ) : avail ? (
+                      "Reserve"
+                    ) : (
+                      "Unavailable"
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

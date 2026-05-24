@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin, ArrowLeft, CheckCircle2, XCircle, Package } from "lucide-react";
 import { CountdownTimer } from "@/components/countdown-timer";
+import { Navbar } from "@/components/navbar";
 import { crypto } from "@/lib/idempotency";
 import type { ReservationWithDetails } from "@/lib/types";
 
@@ -85,18 +86,20 @@ export function ReservationClient({ reservation: initial }: Props) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAFA]">
-      {/* Top nav */}
-      <header className="sticky top-0 z-50 border-b border-[#E4E4E7] bg-[#FAFAFA]/95 backdrop-blur-sm">
-        <div className="max-w-2xl mx-auto px-6 h-12 flex items-center justify-between">
+      <Navbar />
+
+      {/* Status bar below navbar */}
+      <div className="border-b border-[#E4E4E7] bg-white">
+        <div className="max-w-2xl mx-auto px-6 h-10 flex items-center justify-between">
           <button
             onClick={() => router.push("/")}
-            className="flex items-center gap-2 text-xs text-[#71717A] hover:text-[#0A0A0A] transition-colors duration-150 cursor-pointer"
+            className="flex items-center gap-1.5 text-xs text-[#71717A] hover:text-[#0A0A0A] transition-colors duration-150 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-3.5 h-3.5" />
             Back to catalog
           </button>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[#71717A]">Checkout</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#A1A1AA]">Reservation</span>
             <span
               className="tag num"
               style={{ background: sc.bg, color: sc.text, borderColor: sc.border }}
@@ -105,7 +108,7 @@ export function ReservationClient({ reservation: initial }: Props) {
             </span>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-6 py-10 space-y-6">
 

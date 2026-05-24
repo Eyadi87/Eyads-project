@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-inter);
   --color-ring: var(--ring);
@@ -57,7 +57,7 @@
   }
   html {
     scroll-behavior: smooth;
-    font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+    font-family: var(--font-geist), system-ui, -apple-system, sans-serif;
   }
   body {
     @apply bg-background text-foreground;
