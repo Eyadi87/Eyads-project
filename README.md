@@ -1,36 +1,147 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Allo Health — Inventory Reservation System
 
-## Getting Started
+A Next.js 16 App Router application that solves the checkout race-condition problem for multi-warehouse retail. When a customer proceeds to checkout, units are atomically reserved for 10 minutes. Payment confirmation permanently decrements stock; cancellation or expiry returns units to available inventory.
 
-First, run the development server:
+---
+
+## Live Demo
+
+> Deployed at: *(Vercel URL added after deploy)*
+
+---
+
+## Local Setup
+
+### Prerequisites
+
+- Node.js 18+
+- A PostgreSQL database (Supabase, Neon, or Railway)
+
+### 1. Clone and install
+
+```bash
+git clone <repo-url>
+cd allo-health
+npm install
+```
+
+### 2. Environment variables
+
+Create a `.env` file:
+
+```env
+DATABASE_URL="postgresql://user:pass@host:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://user:pass@host:5432/postgres"
+RESERVATION_TTL_MINUTES=10
+```
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Pooled Postgres URL (runtime queries) |
+| `DIRECT_URL` | Direct Postgres URL (migrations only) |
+| `RESERVATION_TTL_MINUTES` | Hold duration in minutes (default: 10) |
+
+### 3. Run migrations
+
+```bash
+npx prisma migrate deploy
+```
+
+### 4. Seed the database
+
+```bash
+npm run seed
+```
+
+Creates 3 warehouses, 6 products, 14 stock entries with varied availability.
+
+### 5. Start dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Concurrency Approach
 
-## Learn More
+The reservation endpoint is race-condition-free via a single atomic SQL `UPDATE`:
 
-To learn more about Next.js, take a look at the following resources:
+```sql
+UPDATE "StockItem"
+SET reserved = reserved + $quantity
+WHERE "productId" = $productId
+  AND "warehouseId" = $warehouseId
+  AND (total - reserved) >= $quantity
+RETURNING id
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Why this works:** PostgreSQL row-level locking means only one transaction can modify a given `StockItem` row at a time. The `WHERE` guard `(total - reserved) >= quantity` is evaluated inside the lock — if two requests race for the last unit, exactly one satisfies the condition and gets a row back. The other gets an empty result and returns 409.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+No application-level locks or Redis needed for correctness.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Expiry Mechanism
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Approach: Lazy cleanup on read
+
+When a reservation is accessed (GET reservation page, GET API, or POST confirm), the server checks `expiresAt < now`. If expired and still `PENDING`, it atomically:
+
+1. Sets `status = RELEASED`
+2. Decrements `StockItem.reserved`
+
+Both steps run in a Prisma `$transaction` so they're atomic.
+
+**Trade-off:** Reserved units appear unavailable until that reservation is touched. For production I'd add a Vercel Cron job at `/api/cron/expire` running every 60 seconds to batch-release all expired reservations via a single SQL statement.
+
+---
+
+## Idempotency (Bonus)
+
+Both `POST /api/reservations` and `POST /api/reservations/:id/confirm` support an `Idempotency-Key` header.
+
+**How it works:**
+1. First request: run the operation, store `{ key, reservationId, response }` in `IdempotencyRecord` table
+2. Retry with same key: return stored response immediately — no side effect repeated
+
+**Storage:** Postgres `IdempotencyRecord` table with `UNIQUE` constraint on `key`. In production I'd add a TTL and cleanup job, or switch to Redis with `SET key value EX 86400`.
+
+---
+
+## API Reference
+
+| Method | Path | Behaviour |
+|--------|------|-----------|
+| `GET` | `/api/products` | List products with stock per warehouse |
+| `GET` | `/api/warehouses` | List warehouses |
+| `POST` | `/api/reservations` | Reserve units — 409 if insufficient |
+| `GET` | `/api/reservations/:id` | Get reservation details |
+| `POST` | `/api/reservations/:id/confirm` | Confirm — 410 if expired |
+| `POST` | `/api/reservations/:id/release` | Release early |
+
+---
+
+## Stack
+
+- **Next.js 16** App Router — server components + route handlers
+- **Prisma 7** + **@prisma/adapter-pg** — ORM with pg driver adapter (Prisma 7 requires adapter)
+- **Supabase** — hosted PostgreSQL
+- **Zod** — request validation
+- **Tailwind CSS v4** + **shadcn/ui** — styling
+- **sonner** — toast notifications
+
+---
+
+## Trade-offs & What I'd Do Differently
+
+| Area | Decision | With More Time |
+|------|----------|----------------|
+| **Expiry** | Lazy cleanup on read | Vercel Cron + batch SQL every 60s |
+| **Idempotency storage** | Postgres table | Redis with TTL |
+| **Auth** | None (exercise scope) | Clerk/NextAuth, user-scoped reservations |
+| **Quantity** | Fixed at 1 | Input with max = available |
+| **Observability** | `console.error` | Structured logging + Sentry |
+| **Tests** | None | Unit test atomic UPDATE, integration test concurrent reserve |
