@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, AlertTriangle } from "lucide-react";
 
 interface Props {
   expiresAt: string;
@@ -9,27 +8,20 @@ interface Props {
 }
 
 export function CountdownTimer({ expiresAt, onExpired }: Props) {
-  const [secondsLeft, setSecondsLeft] = useState(() => {
-    return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
-  });
+  const [secondsLeft, setSecondsLeft] = useState(() =>
+    Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
+  );
 
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      onExpired?.();
-      return;
-    }
-    const interval = setInterval(() => {
+    if (secondsLeft <= 0) { onExpired?.(); return; }
+    const id = setInterval(() => {
       setSecondsLeft((prev) => {
         const next = prev - 1;
-        if (next <= 0) {
-          clearInterval(interval);
-          onExpired?.();
-          return 0;
-        }
+        if (next <= 0) { clearInterval(id); onExpired?.(); return 0; }
         return next;
       });
     }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(id);
   }, [expiresAt, onExpired, secondsLeft]);
 
   const minutes = Math.floor(secondsLeft / 60);
@@ -40,30 +32,39 @@ export function CountdownTimer({ expiresAt, onExpired }: Props) {
 
   if (isExpired) {
     return (
-      <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-        <AlertTriangle className="w-4 h-4 shrink-0" />
-        <span className="text-sm font-semibold">Reservation expired</span>
+      <div className="border border-[#FECACA] bg-[#FEF2F2] rounded-lg px-5 py-4">
+        <p className="text-sm font-semibold text-[#DC2626]">Hold expired</p>
+        <p className="text-xs text-[#DC2626] mt-0.5">The reserved units have been returned to available stock.</p>
       </div>
     );
   }
 
   return (
-    <div className={`rounded-xl border px-4 py-3 transition-colors duration-300 ${isUrgent ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200"}`}>
+    <div
+      className="border rounded-lg px-5 py-4 transition-colors duration-300"
+      style={{
+        borderColor: isUrgent ? "#FDE68A" : "#E4E4E7",
+        background: isUrgent ? "#FFFBEB" : "#FFFFFF",
+      }}
+    >
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Clock className={`w-4 h-4 ${isUrgent ? "text-amber-500 animate-pulse" : "text-slate-400"}`} />
-          <span className={`text-xs font-medium ${isUrgent ? "text-amber-700" : "text-slate-500"}`}>
-            Hold expires in
-          </span>
-        </div>
-        <span className={`text-xl font-bold tabular-nums ${isUrgent ? "text-amber-600" : "text-[#0F172A]"}`}>
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: isUrgent ? "#D97706" : "#71717A" }}>
+          Hold expires in
+        </p>
+        <p
+          className="text-2xl font-bold num"
+          style={{ color: isUrgent ? "#D97706" : "#0A0A0A" }}
+        >
           {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-        </span>
+        </p>
       </div>
-      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+      <div className="stock-bar">
         <div
-          className={`h-full rounded-full transition-all duration-1000 ${isUrgent ? "bg-amber-400" : "bg-emerald-500"}`}
-          style={{ width: `${progress}%` }}
+          className="stock-bar-fill transition-all duration-1000"
+          style={{
+            width: `${progress}%`,
+            background: isUrgent ? "#D97706" : "#059669",
+          }}
         />
       </div>
     </div>

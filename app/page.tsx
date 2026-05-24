@@ -1,21 +1,16 @@
 import { prisma } from "@/lib/db";
 import { Navbar } from "@/components/navbar";
-import { ProductCard } from "@/components/product-card";
-import { Package, Warehouse, TrendingUp } from "lucide-react";
+import { ProductRow } from "@/components/product-row";
+import { Package, Warehouse, ShieldCheck, Clock } from "lucide-react";
 import type { ProductWithStock } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 async function getProducts(): Promise<ProductWithStock[]> {
   const products = await prisma.product.findMany({
-    include: {
-      stockItems: {
-        include: { warehouse: true },
-      },
-    },
+    include: { stockItems: { include: { warehouse: true } } },
     orderBy: { createdAt: "asc" },
   });
-
   return products.map((p) => ({
     id: p.id,
     name: p.name,
@@ -28,86 +23,164 @@ async function getProducts(): Promise<ProductWithStock[]> {
       total: s.total,
       reserved: s.reserved,
       available: Math.max(0, s.total - s.reserved),
-      warehouse: {
-        id: s.warehouse.id,
-        name: s.warehouse.name,
-        location: s.warehouse.location,
-      },
+      warehouse: { id: s.warehouse.id, name: s.warehouse.name, location: s.warehouse.location },
     })),
   }));
 }
 
 async function getStats() {
-  const [productCount, warehouseCount, totalStock] = await Promise.all([
+  const [productCount, warehouseCount, stockAgg, activeReservations] = await Promise.all([
     prisma.product.count(),
     prisma.warehouse.count(),
-    prisma.stockItem.aggregate({ _sum: { total: true } }),
+    prisma.stockItem.aggregate({ _sum: { total: true, reserved: true } }),
+    prisma.reservation.count({ where: { status: "PENDING", expiresAt: { gt: new Date() } } }),
   ]);
-  return { productCount, warehouseCount, totalStock: totalStock._sum.total ?? 0 };
+  return {
+    productCount,
+    warehouseCount,
+    totalUnits: stockAgg._sum.total ?? 0,
+    reservedUnits: stockAgg._sum.reserved ?? 0,
+    activeReservations,
+  };
 }
 
 export default async function HomePage() {
   const [products, stats] = await Promise.all([getProducts(), getStats()]);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="min-h-screen flex flex-col bg-[#FAFAFA]">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Hero header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#0F172A] tracking-tight">
-            Product Catalog
-          </h1>
-          <p className="text-[#64748B] mt-1.5 text-base">
-            Reserve units from any warehouse — holds expire in 10 minutes.
-          </p>
+      {/* Hero */}
+      <section className="border-b border-[#E4E4E7] bg-white">
+        <div className="max-w-5xl mx-auto px-6 py-14">
+          <div className="fade-up">
+            <div className="flex items-center gap-2 mb-5">
+              <span className="tag tag-green">Live</span>
+              <span className="text-xs text-[#71717A]">Real-time inventory across all warehouses</span>
+            </div>
+            <h1 className="text-4xl font-bold text-[#0A0A0A] tracking-tight leading-tight max-w-2xl">
+              Inventory Reservation Platform
+            </h1>
+            <p className="text-base text-[#71717A] mt-3 max-w-xl leading-relaxed">
+              Reserve units from any warehouse. Each hold is valid for 10 minutes.
+              Confirm to complete purchase or cancel to return stock.
+            </p>
+          </div>
 
           {/* Stats row */}
-          <div className="flex flex-wrap gap-4 mt-6">
+          <div
+            className="grid grid-cols-2 sm:grid-cols-4 gap-0 mt-10 border border-[#E4E4E7] rounded-lg overflow-hidden fade-up"
+            style={{ animationDelay: "100ms" }}
+          >
             {[
-              { icon: Package, label: "Products", value: stats.productCount },
-              { icon: Warehouse, label: "Warehouses", value: stats.warehouseCount },
-              { icon: TrendingUp, label: "Total Units", value: stats.totalStock.toLocaleString("en-IN") },
-            ].map(({ icon: Icon, label, value }) => (
+              { label: "Products", value: stats.productCount, icon: Package },
+              { label: "Warehouses", value: stats.warehouseCount, icon: Warehouse },
+              { label: "Available units", value: (stats.totalUnits - stats.reservedUnits).toLocaleString("en-IN"), icon: ShieldCheck },
+              { label: "Active holds", value: stats.activeReservations, icon: Clock },
+            ].map(({ label, value, icon: Icon }, i) => (
               <div
                 key={label}
-                className="flex items-center gap-2.5 bg-white border border-[#E6E8EA] rounded-xl px-4 py-2.5 shadow-sm"
+                className="bg-white px-5 py-4 flex flex-col gap-1 border-r border-[#E4E4E7] last:border-r-0"
               >
-                <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <Icon className="w-4 h-4 text-[#334155]" />
+                <div className="flex items-center gap-2">
+                  <Icon className="w-3.5 h-3.5 text-[#71717A]" />
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-[#71717A]">{label}</span>
                 </div>
-                <div>
-                  <p className="text-xs text-[#94A3B8] font-medium">{label}</p>
-                  <p className="text-sm font-bold text-[#0F172A] tabular-nums leading-tight">{value}</p>
-                </div>
+                <p className="text-2xl font-bold text-[#0A0A0A] num">{value}</p>
               </div>
             ))}
           </div>
         </div>
+      </section>
 
-        {/* Product grid */}
-        {products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-              <Package className="w-8 h-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-[#0F172A]">No products yet</h3>
-            <p className="text-[#64748B] mt-1 text-sm">Run the seed script to populate the catalog.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
+      {/* How it works */}
+      <section className="border-b border-[#E4E4E7] bg-[#FAFAFA]">
+        <div className="max-w-5xl mx-auto px-6 py-10">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#71717A] mb-6">
+            How it works
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[
+              {
+                step: "01",
+                title: "Browse and reserve",
+                body: "Select a product and warehouse below. Click Reserve to hold your unit. Stock is locked instantly using an atomic database transaction.",
+              },
+              {
+                step: "02",
+                title: "Complete checkout",
+                body: "You have 10 minutes to complete your purchase. A live countdown shows time remaining. If the timer runs out, the hold releases automatically.",
+              },
+              {
+                step: "03",
+                title: "Confirm or cancel",
+                body: "Click Confirm purchase to finalize the order. The stock is permanently decremented. Click Cancel at any time to return the unit to available inventory.",
+              },
+            ].map(({ step, title, body }, i) => (
+              <div
+                key={step}
+                className="fade-up"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <p className="text-xs font-bold text-[#059669] num mb-2">{step}</p>
+                <p className="text-sm font-semibold text-[#0A0A0A] mb-1">{title}</p>
+                <p className="text-sm text-[#71717A] leading-relaxed">{body}</p>
+              </div>
             ))}
           </div>
-        )}
-      </main>
+        </div>
+      </section>
 
-      <footer className="border-t border-[#E6E8EA] mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <p className="text-xs text-[#94A3B8]">Allo Health Inventory — Take-Home Exercise</p>
-          <p className="text-xs text-[#94A3B8]">Reservations expire after 10 min</p>
+      {/* Product table */}
+      <section className="flex-1 max-w-5xl mx-auto w-full px-6 py-10">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#71717A]">
+            Products ({products.length})
+          </p>
+          <p className="text-xs text-[#71717A]">Click any row to see warehouse breakdown</p>
+        </div>
+
+        {/* Table header */}
+        <div
+          className="hidden md:grid px-6 py-2 text-[11px] font-semibold uppercase tracking-widest text-[#71717A] border-b border-[#E4E4E7]"
+          style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr auto" }}
+        >
+          <span>Product</span>
+          <span>SKU</span>
+          <span>Price</span>
+          <span>Stock</span>
+          <span>Status</span>
+        </div>
+
+        {/* Rows */}
+        <div className="divide-y divide-[#E4E4E7]">
+          {products.length === 0 ? (
+            <div className="py-20 text-center">
+              <Package className="w-8 h-8 text-[#71717A] mx-auto mb-3" />
+              <p className="text-sm font-semibold text-[#0A0A0A]">No products</p>
+              <p className="text-xs text-[#71717A] mt-1">Run the seed script to populate the catalog.</p>
+            </div>
+          ) : (
+            products.map((product, i) => (
+              <ProductRow key={product.id} product={product} index={i} />
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-[#E4E4E7] mt-auto">
+        <div className="max-w-5xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-4">
+            <div className="w-4 h-4 rounded-sm bg-[#0A0A0A]" />
+            <p className="text-xs text-[#71717A]">Allo Health Inventory Platform</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-[#71717A]">
+            <span>Reservations expire after 10 minutes</span>
+            <span>|</span>
+            <span>Atomic race condition protection via PostgreSQL</span>
+          </div>
         </div>
       </footer>
     </div>

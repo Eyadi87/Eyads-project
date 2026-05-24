@@ -3,10 +3,9 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MapPin, Package, CheckCircle2, XCircle, ArrowLeft, ShoppingBag } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { MapPin, ArrowLeft, CheckCircle2, XCircle, Package } from "lucide-react";
 import { CountdownTimer } from "@/components/countdown-timer";
+import { crypto } from "@/lib/idempotency";
 import type { ReservationWithDetails } from "@/lib/types";
 
 interface Props {
@@ -17,25 +16,25 @@ type Status = "PENDING" | "CONFIRMED" | "RELEASED";
 
 export function ReservationClient({ reservation: initial }: Props) {
   const router = useRouter();
-  const [reservation, setReservation] = useState(initial);
   const [status, setStatus] = useState<Status>(initial.status as Status);
   const [loading, setLoading] = useState<"confirm" | "cancel" | null>(null);
 
   const handleExpired = useCallback(() => {
     setStatus("RELEASED");
     toast.error("Reservation expired", {
-      description: "Your hold has expired. The units are now available again.",
+      description: "Your hold has expired. Units returned to available stock.",
     });
   }, []);
 
   async function confirm() {
     setLoading("confirm");
     try {
-      const res = await fetch(`/api/reservations/${reservation.id}/confirm`, {
+      const key = crypto.randomKey();
+      const res = await fetch(`/api/reservations/${initial.id}/confirm`, {
         method: "POST",
+        headers: { "Idempotency-Key": key },
       });
       const data = await res.json();
-
       if (res.status === 410) {
         setStatus("RELEASED");
         toast.error("Reservation expired", { description: data.error });
@@ -45,10 +44,9 @@ export function ReservationClient({ reservation: initial }: Props) {
         toast.error("Confirmation failed", { description: data.error });
         return;
       }
-
       setStatus("CONFIRMED");
-      toast.success("Purchase confirmed!", {
-        description: `Order placed for ${reservation.quantity}x ${reservation.stockItem.product.name}`,
+      toast.success("Purchase confirmed", {
+        description: `Order placed: ${initial.quantity}x ${initial.stockItem.product.name}`,
       });
     } catch {
       toast.error("Network error. Please try again.");
@@ -60,20 +58,14 @@ export function ReservationClient({ reservation: initial }: Props) {
   async function cancel() {
     setLoading("cancel");
     try {
-      const res = await fetch(`/api/reservations/${reservation.id}/release`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/reservations/${initial.id}/release`, { method: "POST" });
       const data = await res.json();
-
       if (!res.ok) {
         toast.error("Cancel failed", { description: data.error });
         return;
       }
-
       setStatus("RELEASED");
-      toast.info("Reservation cancelled", {
-        description: "Units returned to available stock.",
-      });
+      toast.info("Reservation cancelled", { description: "Stock returned to available inventory." });
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -81,170 +73,215 @@ export function ReservationClient({ reservation: initial }: Props) {
     }
   }
 
-  const product = reservation.stockItem.product;
-  const warehouse = reservation.stockItem.warehouse;
+  const product = initial.stockItem.product;
+  const warehouse = initial.stockItem.warehouse;
+
+  const statusColors: Record<Status, { bg: string; border: string; text: string; label: string }> = {
+    PENDING:   { bg: "#FFFBEB", border: "#FDE68A", text: "#D97706", label: "Pending" },
+    CONFIRMED: { bg: "#ECFDF5", border: "#A7F3D0", text: "#059669", label: "Confirmed" },
+    RELEASED:  { bg: "#FEF2F2", border: "#FECACA", text: "#DC2626", label: "Released" },
+  };
+  const sc = statusColors[status];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
+    <div className="min-h-screen flex flex-col bg-[#FAFAFA]">
       {/* Top nav */}
-      <header className="sticky top-0 z-50 w-full border-b border-[#E6E8EA] bg-white/80 backdrop-blur-md">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
+      <header className="sticky top-0 z-50 border-b border-[#E4E4E7] bg-[#FAFAFA]/95 backdrop-blur-sm">
+        <div className="max-w-2xl mx-auto px-6 h-12 flex items-center justify-between">
+          <button
             onClick={() => router.push("/")}
-            className="h-8 px-2 text-[#64748B] hover:text-[#0F172A] cursor-pointer"
+            className="flex items-center gap-2 text-xs text-[#71717A] hover:text-[#0A0A0A] transition-colors duration-150 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
-          <div className="h-4 w-px bg-slate-200" />
-          <span className="text-sm font-medium text-[#0F172A]">Checkout</span>
-          <div className="ml-auto">
-            <StatusBadge status={status} />
+            <ArrowLeft className="w-4 h-4" />
+            Back to catalog
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[#71717A]">Checkout</span>
+            <span
+              className="tag num"
+              style={{ background: sc.bg, color: sc.text, borderColor: sc.border }}
+            >
+              {sc.label}
+            </span>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8 space-y-4">
-        {/* Countdown — only show if pending */}
-        {status === "PENDING" && (
-          <CountdownTimer expiresAt={reservation.expiresAt} onExpired={handleExpired} />
-        )}
+      <main className="flex-1 max-w-2xl mx-auto w-full px-6 py-10 space-y-6">
 
-        {/* Confirmed banner */}
+        {/* Status banners */}
         {status === "CONFIRMED" && (
-          <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 animate-in-up">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <div
+            className="border rounded-lg px-5 py-4 flex items-center gap-3 fade-up"
+            style={{ background: "#ECFDF5", borderColor: "#A7F3D0" }}
+          >
+            <CheckCircle2 className="w-5 h-5 shrink-0" style={{ color: "#059669" }} />
             <div>
-              <p className="text-sm font-semibold text-emerald-800">Purchase confirmed!</p>
-              <p className="text-xs text-emerald-600">Your order has been placed successfully.</p>
+              <p className="text-sm font-semibold" style={{ color: "#065F46" }}>Purchase confirmed</p>
+              <p className="text-xs mt-0.5" style={{ color: "#059669" }}>Your order has been placed successfully.</p>
             </div>
           </div>
         )}
 
-        {/* Released/expired banner */}
         {status === "RELEASED" && (
-          <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 animate-in-up">
-            <XCircle className="w-5 h-5 text-red-500 shrink-0" />
+          <div
+            className="border rounded-lg px-5 py-4 flex items-center gap-3 fade-up"
+            style={{ background: "#FEF2F2", borderColor: "#FECACA" }}
+          >
+            <XCircle className="w-5 h-5 shrink-0" style={{ color: "#DC2626" }} />
             <div>
-              <p className="text-sm font-semibold text-red-700">Reservation released</p>
-              <p className="text-xs text-red-500">Units returned to available stock.</p>
+              <p className="text-sm font-semibold" style={{ color: "#7F1D1D" }}>Reservation released</p>
+              <p className="text-xs mt-0.5" style={{ color: "#DC2626" }}>Units have been returned to available stock.</p>
             </div>
           </div>
         )}
 
-        {/* Product card */}
-        <div className="glass-card rounded-2xl p-5 space-y-4">
-          <div>
-            <Badge
-              variant="secondary"
-              className="text-[10px] font-semibold tracking-wider uppercase bg-slate-100 text-slate-500 border-0 mb-2"
-            >
-              {product.sku}
-            </Badge>
-            <h2 className="text-xl font-bold text-[#0F172A]">{product.name}</h2>
-            <p className="text-sm text-[#64748B] mt-1 leading-relaxed">{product.description}</p>
+        {/* Countdown */}
+        {status === "PENDING" && (
+          <CountdownTimer expiresAt={initial.expiresAt} onExpired={handleExpired} />
+        )}
+
+        {/* Order summary */}
+        <div className="border border-[#E4E4E7] rounded-lg bg-white overflow-hidden fade-up">
+          <div className="px-5 py-4 border-b border-[#E4E4E7]">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#71717A]">
+              Order summary
+            </p>
           </div>
 
-          <div className="border-t border-[#E6E8EA] pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-[#64748B]">Unit price</span>
-              <span className="text-sm font-semibold text-[#0F172A] tabular-nums">
-                ₹{Number(product.price).toLocaleString("en-IN")}
-              </span>
+          {/* Product */}
+          <div className="px-5 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <span className="tag tag-slate num mb-2 inline-flex">{product.sku}</span>
+                <h2 className="text-base font-bold text-[#0A0A0A] mt-1">{product.name}</h2>
+                <p className="text-sm text-[#71717A] mt-0.5 leading-relaxed">{product.description}</p>
+              </div>
+              <p className="text-xl font-bold text-[#0A0A0A] num shrink-0">
+                &#8377;{Number(product.price).toLocaleString("en-IN")}
+              </p>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-[#64748B]">Quantity</span>
-              <span className="text-sm font-semibold text-[#0F172A] tabular-nums">{reservation.quantity}</span>
-            </div>
-            <div className="flex items-center justify-between border-t border-[#E6E8EA] pt-3">
-              <span className="text-sm font-semibold text-[#0F172A]">Total</span>
-              <span className="text-lg font-bold text-[#0F172A] tabular-nums">
-                ₹{(Number(product.price) * reservation.quantity).toLocaleString("en-IN")}
+          </div>
+
+          {/* Line items */}
+          <div className="border-t border-[#E4E4E7]">
+            {[
+              { label: "Unit price", value: `₹${Number(product.price).toLocaleString("en-IN")}` },
+              { label: "Quantity", value: `${initial.quantity}` },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                className="flex items-center justify-between px-5 py-3 border-b border-[#F4F4F5]"
+              >
+                <span className="text-sm text-[#71717A]">{label}</span>
+                <span className="text-sm font-medium text-[#0A0A0A] num">{value}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between px-5 py-3">
+              <span className="text-sm font-semibold text-[#0A0A0A]">Total</span>
+              <span className="text-lg font-bold text-[#0A0A0A] num">
+                &#8377;{(Number(product.price) * initial.quantity).toLocaleString("en-IN")}
               </span>
             </div>
           </div>
 
           {/* Warehouse */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-            <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-            <div>
-              <p className="text-xs font-medium text-[#334155]">Fulfillment from</p>
-              <p className="text-xs text-[#64748B]">{warehouse.name} · {warehouse.location}</p>
-            </div>
+          <div className="border-t border-[#E4E4E7] px-5 py-3 flex items-center gap-2">
+            <MapPin className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
+            <span className="text-xs text-[#71717A]">
+              Fulfillment from <span className="font-medium text-[#0A0A0A]">{warehouse.name}</span>{" "}
+              in {warehouse.location}
+            </span>
           </div>
 
           {/* Reservation ID */}
-          <div className="flex items-center gap-2 text-[11px] text-[#94A3B8]">
-            <Package className="w-3 h-3" />
-            <span>Reservation ID: <span className="font-mono">{reservation.id}</span></span>
+          <div className="border-t border-[#E4E4E7] px-5 py-3 flex items-center gap-2">
+            <Package className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
+            <span className="text-xs text-[#71717A]">
+              Reservation{" "}
+              <span className="font-mono text-[#0A0A0A]">{initial.id}</span>
+            </span>
           </div>
         </div>
 
         {/* Actions */}
         {status === "PENDING" && (
-          <div className="flex flex-col sm:flex-row gap-3 animate-in-up">
-            <Button
+          <div className="flex flex-col sm:flex-row gap-3 fade-up">
+            <button
               onClick={confirm}
               disabled={loading !== null}
-              className="flex-1 h-12 bg-[#334155] hover:bg-[#059669] text-white font-semibold text-sm rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+              className="flex-1 h-11 px-6 text-sm font-semibold rounded border transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#0A0A0A", color: "#FFFFFF", borderColor: "#0A0A0A" }}
             >
               {loading === "confirm" ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="flex items-center justify-center gap-2">
+                  <span
+                    className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "rgba(255,255,255,0.3)", borderTopColor: "#fff" }}
+                  />
                   Processing...
                 </span>
               ) : (
-                <span className="flex items-center gap-2">
-                  <ShoppingBag className="w-4 h-4" />
-                  Confirm purchase
-                </span>
+                "Confirm purchase"
               )}
-            </Button>
-            <Button
-              variant="outline"
+            </button>
+            <button
               onClick={cancel}
               disabled={loading !== null}
-              className="flex-1 sm:flex-none sm:w-auto h-12 border-[#E6E8EA] text-[#64748B] hover:text-red-600 hover:border-red-200 hover:bg-red-50 font-medium text-sm rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-11 px-6 text-sm font-medium rounded border transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: "transparent",
+                color: "#71717A",
+                borderColor: "#E4E4E7",
+              }}
             >
               {loading === "cancel" ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                <span className="flex items-center justify-center gap-2">
+                  <span
+                    className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "rgba(0,0,0,0.15)", borderTopColor: "#71717A" }}
+                  />
                   Cancelling...
                 </span>
               ) : (
                 "Cancel"
               )}
-            </Button>
+            </button>
           </div>
         )}
 
         {(status === "CONFIRMED" || status === "RELEASED") && (
-          <Button
+          <button
             onClick={() => router.push("/")}
-            variant="outline"
-            className="w-full h-12 border-[#E6E8EA] text-[#334155] font-medium rounded-xl cursor-pointer"
+            className="w-full h-11 px-6 text-sm font-medium rounded border transition-all duration-150 cursor-pointer"
+            style={{ background: "transparent", color: "#71717A", borderColor: "#E4E4E7" }}
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to catalog
-          </Button>
+            <span className="flex items-center justify-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Back to catalog
+            </span>
+          </button>
         )}
+
+        {/* Instructions */}
+        <div className="border border-[#E4E4E7] rounded-lg bg-white px-5 py-5 space-y-3 text-xs text-[#71717A] leading-relaxed">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#71717A] mb-3">
+            What happens next
+          </p>
+          <p>
+            <span className="font-semibold text-[#0A0A0A]">Confirm purchase:</span>{" "}
+            Clicking Confirm purchase finalizes the order. Stock is permanently decremented and the reservation status changes to Confirmed.
+          </p>
+          <p>
+            <span className="font-semibold text-[#0A0A0A]">Cancel:</span>{" "}
+            Clicking Cancel releases your hold immediately. Units return to available stock for other buyers.
+          </p>
+          <p>
+            <span className="font-semibold text-[#0A0A0A]">Timer expires:</span>{" "}
+            If the countdown reaches zero without confirmation, the hold is automatically released and you will see a 410 Expired status. You can return to the catalog to reserve again.
+          </p>
+        </div>
       </main>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: Status }) {
-  const map: Record<Status, { label: string; class: string }> = {
-    PENDING: { label: "Pending", class: "bg-amber-50 text-amber-700 border-amber-200" },
-    CONFIRMED: { label: "Confirmed", class: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    RELEASED: { label: "Released", class: "bg-red-50 text-red-600 border-red-200" },
-  };
-  const { label, class: cls } = map[status];
-  return (
-    <span className={`text-[11px] font-semibold border rounded-full px-2.5 py-0.5 ${cls}`}>
-      {label}
-    </span>
   );
 }
