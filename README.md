@@ -1,4 +1,4 @@
-# Allo Health — Inventory Reservation System
+# Allo Health (Inventory Reservation System)
 
 A Next.js 16 App Router application that solves the checkout race-condition problem for multi-warehouse retail. When a customer proceeds to checkout, units are atomically reserved for 10 minutes. Payment confirmation permanently decrements stock; cancellation or expiry returns units to available inventory.
 
