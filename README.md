@@ -6,7 +6,7 @@ A Next.js 16 App Router application that solves the checkout race-condition prob
 
 ## Live Demo
 
-> Deployed at: *(Vercel URL added after deploy)*
+> **https://allo-health-silk.vercel.app**
 
 ---
 
